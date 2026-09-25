@@ -14,6 +14,16 @@ function port(): number {
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : DEFAULT_PORT;
 }
+// Accepts "host" or "host:port". Browsers omit the port on default ports,
+// so a dashboard bound to 80 must accept a bare Host header.
+function isAllowedHost(value: string): boolean {
+  const host = value.trim().toLowerCase();
+  const [name, portPart] = host.split(":");
+  if (name !== HOST && name !== "localhost") return false;
+  if (portPart === undefined) return PORT === 80;
+  if (portPart === "80" && PORT === 80) return true;
+  return portPart === String(PORT);
+}
 const REPORT = reportPath();
 const PUBLIC_DIR = join(import.meta.dirname, "public");
 
@@ -39,8 +49,7 @@ function json(res: ServerResponse, status: number, body: unknown) {
 }
 
 export async function handle(req: IncomingMessage, res: ServerResponse) {
-  const host = req.headers.host?.trim().toLowerCase();
-  if (host !== `${HOST}:${PORT}` && host !== `localhost:${PORT}`) {
+  if (!isAllowedHost(req.headers.host ?? "")) {
     return send(res, 403, "text/plain; charset=utf-8", "Forbidden");
   }
 
