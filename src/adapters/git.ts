@@ -26,7 +26,8 @@ function readRepoFile(repoRoot: string, path: string): string | null {
   if (!absolute.startsWith(repoRoot + sep)) return null;
   let fd: number;
   try {
-    fd = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
+    // O_NONBLOCK: a listed path swapped for a FIFO must not block open.
+    fd = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (error) {
     if (isBenignOpenError(error)) return null;
     throw error;
