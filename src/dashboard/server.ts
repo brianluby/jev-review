@@ -6,7 +6,14 @@ import { join, relative } from "node:path";
 import { readReport, reportPath } from "../adapters/report-store.ts";
 
 const HOST = "127.0.0.1";
-const PORT = Number(process.env.PORT ?? 4317);
+const DEFAULT_PORT = 4317;
+const PORT = port();
+function port(): number {
+  const raw = process.env.PORT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_PORT;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : DEFAULT_PORT;
+}
 const REPORT = reportPath();
 const PUBLIC_DIR = join(import.meta.dirname, "public");
 
@@ -22,7 +29,7 @@ function send(res: ServerResponse, status: number, type: string, body: string | 
     "Content-Type": type,
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
-    "Content-Security-Policy": "default-src 'self'; img-src 'self' data:",
+    "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
   });
   res.end(body);
 }
@@ -32,6 +39,11 @@ function json(res: ServerResponse, status: number, body: unknown) {
 }
 
 export async function handle(req: IncomingMessage, res: ServerResponse) {
+  const host = req.headers.host?.trim().toLowerCase();
+  if (host !== `${HOST}:${PORT}` && host !== `localhost:${PORT}`) {
+    return send(res, 403, "text/plain; charset=utf-8", "Forbidden");
+  }
+
   if (req.method !== "GET" && req.method !== "HEAD") {
     return send(res, 405, "text/plain; charset=utf-8", "Method not allowed");
   }
