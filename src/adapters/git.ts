@@ -1,8 +1,8 @@
 // Git adapter: discovers changed source files under a scope and returns each
 // one with a unified diff. Untracked files are rendered as all-additions.
 import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { relative, resolve, sep } from "node:path";
 import { SOURCE_FILE } from "../domain/config.ts";
 import { patchForNewFile } from "../domain/patch.ts";
 import type { ChangedFile } from "../domain/types.ts";
@@ -18,9 +18,32 @@ function lines(output: string): string[] {
   return output.split("\n").filter(Boolean);
 }
 
+// Reads an untracked path only when it is a regular file inside repoRoot.
+// Symlinks (O_NOFOLLOW), special files, and escapes resolve to null.
+function readRepoFile(repoRoot: string, path: string): string | null {
+  const absolute = resolve(repoRoot, path);
+  if (!absolute.startsWith(repoRoot + sep)) return null;
+  let fd: number;
+  try {
+    fd = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch {
+    return null;
+  }
+  try {
+    if (!fstatSync(fd).isFile()) return null;
+    const real = realpathSync(absolute);
+    if (real !== absolute && !real.startsWith(repoRoot + sep)) return null;
+    return readFileSync(fd, "utf8");
+  } catch {
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export function changedFiles(scope: string): ChangedFile[] {
   const realScope = realpathSync(scope);
-  const repoRoot = git(realScope, ["rev-parse", "--show-toplevel"]).trim();
+  const repoRoot = realpathSync(git(realScope, ["rev-parse", "--show-toplevel"]).trim());
   const relativeScope = relative(repoRoot, realScope) || ".";
 
   const tracked = lines(
@@ -42,10 +65,11 @@ export function changedFiles(scope: string): ChangedFile[] {
     SOURCE_FILE.test(path),
   );
 
-  return paths.map((path) => ({
-    path,
-    patch: untrackedSet.has(path)
-      ? patchForNewFile(readFileSync(resolve(repoRoot, path), "utf8"))
-      : git(repoRoot, ["diff", "HEAD", "--unified=3", "--", path]),
-  }));
+  return paths.flatMap((path) => {
+    if (!untrackedSet.has(path)) {
+      return [{ path, patch: git(repoRoot, ["diff", "HEAD", "--unified=3", "--", path]) }];
+    }
+    const content = readRepoFile(repoRoot, path);
+    return content === null ? [] : [{ path, patch: patchForNewFile(content) }];
+  });
 }
