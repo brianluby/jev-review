@@ -46,7 +46,10 @@ export async function saveReport(report: ReviewReport, path = reportPath()): Pro
     try {
       await writeFile(temp, data, { flag: "wx" });
     } catch (error) {
+      // EEXIST: another process owns the name; retry. Any other failure may
+      // have created our temp file, so remove it before surfacing the error.
       if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+      await unlink(temp).catch(() => {});
       throw error;
     }
     try {

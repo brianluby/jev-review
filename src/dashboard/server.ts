@@ -39,7 +39,7 @@ function json(res: ServerResponse, status: number, body: unknown) {
 }
 
 export async function handle(req: IncomingMessage, res: ServerResponse) {
-  const host = req.headers.host;
+  const host = req.headers.host?.trim().toLowerCase();
   if (host !== `${HOST}:${PORT}` && host !== `localhost:${PORT}`) {
     return send(res, 403, "text/plain; charset=utf-8", "Forbidden");
   }
